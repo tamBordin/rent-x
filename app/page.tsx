@@ -6,18 +6,18 @@ import {
   Monitor,
   RefreshCcw,
   User,
-  Zap
+  Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import BookingModal from "./components/BookingModal"; // แก้ path เป็น @/components เพื่อความชัวร์
+import { useEffect, useRef, useState } from "react"; // เพิ่ม useRef
+import BookingModal from "./components/BookingModal";
 import { supabase } from "./lib/supabase";
 
-// --- Interfaces ---
 interface StatusState {
   isBusy: boolean;
   nextAvailable: string;
   loading: boolean;
   statusType?: "active" | "pending";
+  endTime?: string; // เพิ่มตัวนี้ เพื่อเอามาคำนวณเวลาถอยหลัง
 }
 
 interface FeatureCardProps {
@@ -41,9 +41,14 @@ export default function Home() {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
+
+  // ตัวเก็บ Timer เพื่อไม่ให้มันทำงานซ้ำซ้อน
+  const refreshTimer = useRef<NodeJS.Timeout | null>(null);
 
   const checkStatus = async () => {
-    setStatus((prev) => ({ ...prev, loading: true }));
+    // อย่าเพิ่ง loading: true ตรงนี้ ไม่งั้นหน้าเว็บจะกระพริบตอน Auto Refresh
+    // setStatus((prev) => ({ ...prev, loading: true }));
 
     try {
       const now = new Date().toISOString();
@@ -72,6 +77,7 @@ export default function Home() {
           nextAvailable: timeString,
           loading: false,
           statusType: isPending ? "pending" : "active",
+          endTime: booking.end_time, // เก็บเวลาดิบๆ ไว้คำนวณ
         });
       } else {
         setStatus({
@@ -79,6 +85,7 @@ export default function Home() {
           nextAvailable: "-",
           loading: false,
           statusType: undefined,
+          endTime: undefined,
         });
       }
     } catch (err) {
@@ -87,6 +94,7 @@ export default function Home() {
     }
   };
 
+  // 1. Init & Realtime Listener
   useEffect(() => {
     checkStatus();
 
@@ -94,13 +102,9 @@ export default function Home() {
       .channel("bookings-realtime")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "bookings",
-        },
+        { event: "*", schema: "public", table: "bookings" },
         (payload) => {
-          console.log("มีการเปลี่ยนแปลงใน Database!", payload);
+          console.log("DB Changed:", payload);
           checkStatus();
         }
       )
@@ -111,9 +115,34 @@ export default function Home() {
     };
   }, []);
 
+  // 2. [เพิ่มใหม่] Auto Refresh เมื่อถึงเวลาหมดอายุ ⏰
+  useEffect(() => {
+    // เคลียร์ Timer เก่าทิ้งก่อนเสมอ เพื่อไม่ให้ชนกัน
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+
+    if (status.isBusy && status.endTime) {
+      const now = new Date().getTime();
+      const end = new Date(status.endTime).getTime();
+      const delay = end - now;
+
+      if (delay > 0) {
+        console.log(`ตั้งเวลา Auto Refresh ในอีก ${delay / 1000} วินาที`);
+
+        // ตั้งเวลาให้ Refresh ตอนหมดเวลาพอดีเป๊ะ (+1 วิ กันพลาด)
+        refreshTimer.current = setTimeout(() => {
+          console.log("⏰ หมดเวลา! รีเฟรชสถานะ...");
+          checkStatus();
+        }, delay + 1000);
+      }
+    }
+
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, [status.endTime, status.isBusy]); // ทำงานทุกครั้งที่เวลาเปลี่ยน
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-green-500 selection:text-black">
-      {/* 3. ใส่ Modal ลงไปในหน้าเว็บ (วางคู่กับ BookingModal) */}
       <BookingModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -126,10 +155,12 @@ export default function Home() {
       </div>
 
       <main className="max-w-md mx-auto min-h-screen flex flex-col p-6">
-        {/* Header */}
         <header className="py-8 text-center space-y-2 relative">
           <div
-            onClick={checkStatus}
+            onClick={() => {
+              setStatus((prev) => ({ ...prev, loading: true })); // กดเองให้หมุนโชว์ได้
+              checkStatus();
+            }}
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 cursor-pointer hover:bg-zinc-800 transition-colors"
           >
             <span className="relative flex h-2 w-2">
@@ -154,7 +185,6 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Status Card (The Brain) */}
         <div
           className={`relative group rounded-2xl p-1 transition-all duration-500 ${
             status.isBusy
@@ -179,7 +209,6 @@ export default function Home() {
                 {status.isBusy ? (
                   <>
                     {status.statusType === "pending" ? (
-                      // แสดงผลสำหรับสถานะ Pending (รอโอน)
                       <>
                         <div className="text-4xl font-bold text-yellow-500 animate-pulse">
                           PENDING
@@ -189,7 +218,6 @@ export default function Home() {
                         </p>
                       </>
                     ) : (
-                      // แสดงผลสำหรับสถานะ Active (ไม่ว่าง)
                       <>
                         <div className="text-4xl font-bold text-red-500">
                           BUSY
@@ -231,7 +259,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Features Box */}
         <div className="mt-8 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <FeatureCard
@@ -282,7 +309,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="mt-auto pt-12 pb-6 text-center text-zinc-600 text-xs">
           <p>© 2026 Rent-X | Bro.Game Community</p>
         </footer>
