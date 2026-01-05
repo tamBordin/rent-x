@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, Upload, X } from "lucide-react";
+import { CreditCard, MessageCircle, X } from "lucide-react";
 import { useState } from "react";
 
 interface BookingModalProps {
@@ -9,36 +9,36 @@ interface BookingModalProps {
 }
 
 export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  // ไม่ต้องใช้ state file/loading แล้ว เพราะเราแค่ดีดลูกค้าไป Facebook
+  const [selectedPkg, setSelectedPkg] = useState("1h");
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true); // เริ่มหมุน
+  const handleOpenFacebook = () => {
+    // 1. เตรียมข้อความที่จะให้ลูกค้าส่งหาเรา
+    // แปลงรหัสแพ็คเกจเป็นคำพูดสวยๆ
+    const pkgName =
+      {
+        "1h": "1 ชั่วโมง (10 บาท)",
+        "2h": "2 ชั่วโมง (20 บาท)",
+        "3h": "3 ชั่วโมง (30 บาท)",
+        "5h": "5 ชั่วโมง (45 บาท)",
+        "7h": "7 ชั่วโมง (55 บาท)",
+        "1d": "1 วัน (70 บาท)",
+      }[selectedPkg] || selectedPkg;
 
-    try {
-      const formData = new FormData(e.currentTarget); // ดึงข้อมูลทุกอย่างในฟอร์ม
+    const message = `สวัสดีครับ สนใจเช่า Geforce Now แพ็คเกจ ${pkgName} ครับ สะดวกโอนเลยครับ`;
 
-      // ยิงไปที่ API ที่เราเพิ่งสร้างใน Step 1
-      const res = await fetch("/api/notify", {
-        method: "POST",
-        body: formData,
-      });
+    // 2. สร้างลิงก์ m.me (Facebook Messenger Deep Link)
+    // ⚠️ เปลี่ยน 'YOUR_FB_USERNAME' เป็น ID ของคุณ (เช่น RentX_Shop)
+    const fbUsername = "61585993505168";
+    const url = `https://m.me/${fbUsername}?text=${encodeURIComponent(
+      message
+    )}`;
 
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาด");
-
-      alert("✅ แจ้งโอนเงินเรียบร้อย! เดี๋ยวแอดมินทักไปครับ");
-      onClose(); // ปิดหน้าต่าง
-    } catch (error) {
-      console.error(error);
-      alert("❌ ส่งข้อมูลไม่สำเร็จ: " + error);
-    } finally {
-      setIsLoading(false); // หยุดหมุน
-    }
+    // 3. เปิดแท็บใหม่ไปที่ Messenger
+    window.open(url, "_blank");
+    onClose();
   };
 
   return (
@@ -49,10 +49,11 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
       />
 
       <div className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-zinc-800 bg-zinc-900/50">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <CreditCard className="text-green-500" size={20} />
-            ยืนยันการเช่า (RTX 4080)
+            เลือกแพ็คเกจ
           </h3>
           <button
             onClick={onClose}
@@ -62,28 +63,16 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="p-6 space-y-6">
+          {/* เลือกเวลา */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-400">
-              ช่องทางติดต่อ (Line ID / เบอร์โทร)
-            </label>
-            <input
-              required
-              name="contact"
-              type="text"
-              placeholder="เช่น 089xxxxxxx หรือ ID Line"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all placeholder:text-zinc-600"
-            />
-          </div>
-
-          {/* --- แก้ไขราคาตรงนี้ครับ --- */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-400">
-              เลือกแพ็คเกจ
+              ต้องการเล่นนานแค่ไหน?
             </label>
             <select
-              name="package"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 appearance-none cursor-pointer"
+              value={selectedPkg}
+              onChange={(e) => setSelectedPkg(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 cursor-pointer"
             >
               <option value="1h">1 ชั่วโมง - 10 บาท</option>
               <option value="2h">2 ชั่วโมง - 20 บาท</option>
@@ -94,49 +83,31 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
             </select>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-400">
-              หลักฐานการโอนเงิน
-            </label>
-            <div className="relative group">
-              <input
-                required
-                name="slip"
-                type="file"
-                accept="image/*"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div className="w-full bg-zinc-950 border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center gap-2 group-hover:border-green-500/50 transition-colors">
-                <Upload
-                  className={`w-8 h-8 ${
-                    file ? "text-green-500" : "text-zinc-500"
-                  }`}
-                />
-                <span className="text-sm text-zinc-400">
-                  {file ? file.name : "แตะเพื่ออัปโหลดสลิป"}
-                </span>
-              </div>
-            </div>
+          {/* คำอธิบาย */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-sm text-blue-200">
+            <p className="mb-2">
+              💡 <strong>ขั้นตอนง่ายๆ:</strong>
+            </p>
+            <ol className="list-decimal list-inside space-y-1 text-blue-200/80">
+              <li>กดปุ่มด้านล่างเพื่อไปที่แชท Facebook</li>
+              <li>ระบบจะพิมพ์ข้อความให้อัตโนมัติ</li>
+              <li>แนบสลิปโอนเงินในแชทได้เลย!</li>
+            </ol>
           </div>
 
+          {/* ปุ่มไป Facebook */}
           <button
-            type="submit"
-            disabled={isLoading}
-            className={`w-full py-3.5 rounded-lg font-bold transition-all transform mt-4 shadow-lg
-    ${
-      isLoading
-        ? "bg-zinc-700 text-zinc-400 cursor-wait"
-        : "bg-green-500 hover:bg-green-400 text-black active:scale-95"
-    }`}
+            onClick={handleOpenFacebook}
+            className="w-full bg-[#0084FF] hover:bg-[#0074E4] text-white font-bold py-3.5 rounded-lg transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2"
           >
-            {isLoading ? "กำลังส่งข้อมูล..." : "แจ้งโอนเงิน"}
+            <MessageCircle size={20} fill="white" className="text-white" />
+            ทักแชทส่งสลิป (Messenger)
           </button>
 
-          <p className="text-center text-xs text-zinc-500 mt-2">
-            *เป็น Account เปล่า ต้องผูก ID เกมเล่นเองนะครับ
+          <p className="text-center text-xs text-zinc-600">
+            แอดมินจะส่งรหัสเกมให้ทางแชททันทีที่ตรวจสอบยอดครับ
           </p>
-        </form>
+        </div>
       </div>
     </div>
   );

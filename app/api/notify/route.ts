@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
         // 3. ยิงไปที่ Discord Webhook
         // ⚠️ เอา URL ที่ Copy มาใส่ตรงนี้
-        const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1457604178955206710/zj-tcFVyYTjESpq-GGqmPuKERZI6gw9VJeMSuhrPjvpuSnEATS_TnEnPBqmMOpDeMeJ1';
+        const DISCORD_WEBHOOK_URL = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL || '';
 
         const response = await fetch(DISCORD_WEBHOOK_URL, {
             method: 'POST',
