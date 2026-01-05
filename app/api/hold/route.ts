@@ -1,6 +1,6 @@
 // src/app/api/hold/route.ts
-import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
 
 // สร้าง Supabase Client สำหรับฝั่ง Server
 const supabase = createClient(
@@ -71,4 +71,11 @@ export async function POST() {
         // ✅ จองสำเร็จ
         return NextResponse.json({ success: true });
 
-    } catch (error
+    } catch (error: any) {
+        console.error('System Error:', error);
+        return NextResponse.json(
+            { success: false, message: 'ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งครับ' },
+            { status: 500 }
+        );
+    }
+}
