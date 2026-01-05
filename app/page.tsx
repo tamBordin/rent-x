@@ -6,17 +6,18 @@ import {
   Monitor,
   RefreshCcw,
   User,
-  Zap,
+  Zap
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import BookingModal from "./components/BookingModal";
-import { supabase } from "./lib/supabase"; // เรียกใช้ตัวเชื่อมที่เราเพิ่งสร้าง
+import BookingModal from "./components/BookingModal"; // แก้ path เป็น @/components เพื่อความชัวร์
+import { supabase } from "./lib/supabase";
 
 // --- Interfaces ---
 interface StatusState {
   isBusy: boolean;
-  nextAvailable: string; // เก็บข้อความเวลาที่จะว่าง (เช่น "14:30 น.")
-  loading: boolean; // เอาไว้หมุนๆ ตอนกำลังโหลดข้อมูล
+  nextAvailable: string;
+  loading: boolean;
+  statusType?: "active" | "pending";
 }
 
 interface FeatureCardProps {
@@ -32,94 +33,87 @@ interface PriceRowProps {
 }
 
 export default function Home() {
-  // เริ่มต้นมา ให้ loading: true ไว้ก่อน
   const [status, setStatus] = useState<StatusState>({
     isBusy: false,
     nextAvailable: "-",
     loading: true,
+    statusType: "active",
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isRulesOpen, setIsRulesOpen] = useState(false);
 
-  // ฟังก์ชันเช็คสถานะจาก Supabase
   const checkStatus = async () => {
     setStatus((prev) => ({ ...prev, loading: true }));
 
     try {
-      // 1. ถาม Supabase: "ขอรายการจองที่เวลายังไม่หมด (end_time > ตอนนี้)"
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from("bookings")
-        .select("end_time")
-        .gt("end_time", now) // gt = greater than (มากกว่า)
-        .order("end_time", { ascending: false }) // เอาคนที่จบช้าสุดมา
+        .select("end_time, status")
+        .gt("end_time", now)
+        .order("end_time", { ascending: false })
         .limit(1);
 
       if (error) throw error;
 
-      // 2. วิเคราะห์ผลลัพธ์
       if (data && data.length > 0) {
-        // เจอคนเล่นอยู่! -> ไม่ว่าง
-        const endTime = new Date(data[0].end_time);
-
-        // จัดรูปแบบเวลาให้สวยๆ (เช่น 14:30 น.)
+        const booking = data[0];
+        const endTime = new Date(booking.end_time);
         const timeString =
           endTime.toLocaleTimeString("th-TH", {
             hour: "2-digit",
             minute: "2-digit",
           }) + " น.";
 
+        const isPending = booking.status === "pending";
+
         setStatus({
           isBusy: true,
           nextAvailable: timeString,
           loading: false,
+          statusType: isPending ? "pending" : "active",
         });
       } else {
-        // ไม่เจอใครเลย -> ว่าง
         setStatus({
           isBusy: false,
           nextAvailable: "-",
           loading: false,
+          statusType: undefined,
         });
       }
     } catch (err) {
       console.error("Error fetching status:", err);
-      // ถ้า Error ให้สมมติว่าว่างไว้ก่อน ลูกค้าจะได้ไม่ติดขัด
       setStatus((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  // สั่งให้ทำงานตอนเปิดเว็บครั้งแรก + เฝ้าระวัง Realtime
   useEffect(() => {
-    // 1. เช็คสถานะครั้งแรกตอนโหลดหน้าเว็บ
     checkStatus();
 
-    // 2. สร้าง "หูทิพย์" ฟังการเปลี่ยนแปลงจาก Supabase
     const channel = supabase
       .channel("bookings-realtime")
       .on(
         "postgres_changes",
         {
-          event: "*", // ฟังทุกอย่าง (INSERT, UPDATE, DELETE)
+          event: "*",
           schema: "public",
           table: "bookings",
         },
         (payload) => {
           console.log("มีการเปลี่ยนแปลงใน Database!", payload);
-          checkStatus(); // ถ้ามีการเปลี่ยนแปลง ให้เช็คสถานะใหม่ทันที
+          checkStatus();
         }
       )
       .subscribe();
 
-    // 3. เมื่อปิดหน้าเว็บ ให้เลิกฟัง (Cleanup)
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []); // [] แปลว่าทำครั้งเดียวตอนเปิดเว็บ
+  }, []);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-green-500 selection:text-black">
+      {/* 3. ใส่ Modal ลงไปในหน้าเว็บ (วางคู่กับ BookingModal) */}
       <BookingModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -133,9 +127,9 @@ export default function Home() {
 
       <main className="max-w-md mx-auto min-h-screen flex flex-col p-6">
         {/* Header */}
-        <header className="py-8 text-center space-y-2">
+        <header className="py-8 text-center space-y-2 relative">
           <div
-            onClick={checkStatus} // แอบใส่ปุ่ม refresh ตรงนี้ได้
+            onClick={checkStatus}
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 cursor-pointer hover:bg-zinc-800 transition-colors"
           >
             <span className="relative flex h-2 w-2">
@@ -172,13 +166,11 @@ export default function Home() {
 
           <div className="relative bg-zinc-900/90 backdrop-blur-xl border border-white/5 rounded-xl p-8 text-center overflow-hidden min-h-[200px] flex flex-col justify-center">
             {status.loading ? (
-              // Loading State Display
               <div className="flex flex-col items-center gap-3 animate-pulse">
                 <RefreshCcw className="animate-spin text-zinc-600" />
                 <p className="text-zinc-500 text-sm">กำลังเช็คคิว...</p>
               </div>
             ) : (
-              // Active State Display
               <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
                 <h2 className="text-zinc-400 text-sm uppercase tracking-widest font-medium">
                   Current Status
@@ -186,13 +178,31 @@ export default function Home() {
 
                 {status.isBusy ? (
                   <>
-                    <div className="text-4xl font-bold text-red-500">BUSY</div>
-                    <p className="text-zinc-400 text-sm">
-                      ติดคิวอยู่... จะว่างตอน{" "}
-                      <span className="text-white font-mono bg-zinc-800 px-2 py-1 rounded">
-                        {status.nextAvailable}
-                      </span>
-                    </p>
+                    {status.statusType === "pending" ? (
+                      // แสดงผลสำหรับสถานะ Pending (รอโอน)
+                      <>
+                        <div className="text-4xl font-bold text-yellow-500 animate-pulse">
+                          PENDING
+                        </div>
+                        <p className="text-zinc-400 text-sm">
+                          มีคนจองแล้ว... (รอโอน 5 นาที)
+                        </p>
+                      </>
+                    ) : (
+                      // แสดงผลสำหรับสถานะ Active (ไม่ว่าง)
+                      <>
+                        <div className="text-4xl font-bold text-red-500">
+                          BUSY
+                        </div>
+                        <p className="text-zinc-400 text-sm">
+                          ติดคิวอยู่... จะว่างตอน{" "}
+                          <span className="text-white font-mono bg-zinc-800 px-2 py-1 rounded">
+                            {status.nextAvailable}
+                          </span>
+                        </p>
+                      </>
+                    )}
+
                     <button
                       disabled
                       className="w-full mt-4 bg-zinc-800 text-zinc-500 py-3 rounded-lg font-medium cursor-not-allowed"
